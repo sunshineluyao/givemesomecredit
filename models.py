@@ -144,14 +144,14 @@ class FeatureNN(tf.keras.layers.Layer):
     ]
     if not self._shallow:
       self._h1 = tf.keras.layers.Dense(
-          64,
+          10,
           activation='relu',
           use_bias=True,
           trainable=self._trainable,
           name='h1_{}'.format(self._feature_num),
           kernel_initializer='glorot_uniform')
       self._h2 = tf.keras.layers.Dense(
-          32,
+          10,
           activation='relu',
           use_bias=True,
           trainable=self._trainable,
