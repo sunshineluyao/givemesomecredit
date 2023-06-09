@@ -22,7 +22,7 @@ import numpy as np
 from sklearn import metrics as sk_metrics
 import tensorflow.compat.v1 as tf
 
-import models
+from givemesomecredit import models
 
 # To suppress warnings in the sigmoid function
 np.warnings.filterwarnings('ignore')
