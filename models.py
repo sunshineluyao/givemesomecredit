@@ -136,31 +136,20 @@ class FeatureNN(tf.keras.layers.Layer):
   def build(self, input_shape):
     """Builds the feature net layers."""
     self.hidden_layers = [
-        ActivationLayer(
-            self._num_units,
-            trainable=self._trainable,
-            activation=self._activation,
-            name='activation_layer_{}'.format(self._feature_num))
     ]
     if not self._shallow:
       self._h1 = tf.keras.layers.Dense(
-          10,
-          activation='relu',
+          4,
+          activation='sigmoid',
           use_bias=True,
           trainable=self._trainable,
           name='h1_{}'.format(self._feature_num),
           kernel_initializer='glorot_uniform')
-      self._h2 = tf.keras.layers.Dense(
-          10,
-          activation='relu',
-          use_bias=True,
-          trainable=self._trainable,
-          name='h2_{}'.format(self._feature_num),
-          kernel_initializer='glorot_uniform')
-      self.hidden_layers += [self._h1, self._h2]
+    
+      self.hidden_layers += [self._h1]
     self.linear = tf.keras.layers.Dense(
         1,
-        use_bias=False,
+        use_bias=True,
         trainable=self._trainable,
         name='dense_{}'.format(self._feature_num),
         kernel_initializer='glorot_uniform')
@@ -208,7 +197,6 @@ class NAM(tf.keras.Model):
     super(NAM, self).__init__()
     self._num_inputs = num_inputs
     if isinstance(num_units, list):
-      assert len(num_units) == num_inputs
       self._num_units = num_units
     elif isinstance(num_units, int):
       self._num_units = [num_units for _ in range(self._num_inputs)]
@@ -246,8 +234,92 @@ class NAM(tf.keras.Model):
         stacked_out,
         rate=tf.cond(training, lambda: self._feature_dropout, lambda: 0.0))
     out = tf.reduce_sum(dropout_out, axis=-1)
-    
     return tf.nn.sigmoid(out + self._bias)
+
+  def get_loss(self, x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s, pair_s1,alpha_3):
+    output=self.call(x,training=True)
+    output=tf.reshape(output, len(x))
+    true_value=tf.cast(true_value,tf.float32)
+    
+    #Binary cross entropy
+    BCE=-tf.reduce_sum(tf.multiply(tf.math.log(output+0.00001),true_value)+tf.multiply((1-true_value),tf.math.log(1-output+0.00001)))/len(x)
+    
+    #Punishment
+    
+    matrdefault=np.zeros(len(x[0]))
+    puni_1=0
+    ind=0
+    for i in range(len(x[0])):
+      if(i in monotonic_feature):
+        for j in range(len(individual_output[ind])):
+          temp=np.zeros(len(x[0]))
+          temp[i]=individual_output[ind][j]
+          individual_output_now = self.calc_outputs([temp], training=True)    
+          if(j>=1):
+            puni_1+=max(individual_output_pre[i]-individual_output_now[i],0)
+          individual_output_pre=individual_output_now
+        ind+=1
+    
+    punish_1=alpha_1*puni_1
+    print(punish_1)
+    
+    puni_2=0
+    for i in range(len(pair)):
+      temp=np.zeros(len(x[0]))
+      temp1=np.zeros(len(x[0]))
+      temp2=np.zeros(len(x[0]))
+      temp3=np.zeros(len(x[0]))
+     
+      temp[0:3]=pair[i]
+      temp1[0:3]=pair1[i]
+      temp2[0:3]=pair2[i]
+      temp3[0:3]=pair3[i]
+
+      out=self.calc_outputs([temp], training=True)
+      out1=self.calc_outputs([temp1], training=True)
+      out2=self.calc_outputs([temp2], training=True)
+      out3=self.calc_outputs([temp3], training=True)
+
+      puni_2+=max(out1[0]-out[0],0)
+      puni_2+=max(out2[0]-out[0],0)
+      puni_2+=max(out3[0]-out[0],0)
+      
+    punish_2=alpha_2*puni_2
+    print(punish_2)
+
+    puni_3=0
+    for i in range(len(pair_s)):
+      temp=np.zeros(len(x[0]))
+      temp1=np.zeros(len(x[0]))
+
+      temp[0:3]=pair_s[i]
+      temp1[0:3]=pair_s1[i]
+
+      out=self.calc_outputs([temp], training=True)
+      out1=self.calc_outputs([temp1], training=True)
+
+      puni_3+=max(out1[0]-out[0],0)
+    
+    punish_3=alpha_3*puni_3
+    print(punish_3)
+      
+
+
+    ans = tf.constant(BCE+punish_1+punish_2+punish_3)
+    print(ans)
+    return ans
+    
+  def get_grad(self, x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s,pair_s1,alpha_3):
+    with tf.GradientTape() as tape:
+      tape.watch(self.variables)
+      L = self.get_loss(x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s,pair_s1,alpha_3)
+      g = tape.gradient(L, self.variables)
+    return g
+    
+  
+  def network_learn(self, x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s, pair_s1,alpha_3,learning_r):
+    g = self.get_grad(x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s, pair_s1,alpha_3)
+    tf.keras.optimizers.Adam(learning_rate=learning_r).apply_gradients(zip(g, self.variables))
 
   def _name_scope(self):
     """Overrides the default function to fix name_scope for bias."""
@@ -261,7 +333,7 @@ class NAM(tf.keras.Model):
   def calc_outputs(self, x, training = True):
     """Returns the output computed by each feature net."""
     training = self._true if training else self._false
-    list_x = tf.split(x, self._num_inputs, axis=-1)
+    list_x = tf.split(x, [3,1,1,1,1,1,1,1], axis=-1)
     return [
         self.feature_nns[i](x_i, training=training)
         for i, x_i in enumerate(list_x)
