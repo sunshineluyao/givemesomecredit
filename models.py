@@ -215,8 +215,7 @@ class NAM(tf.keras.Model):
           dropout=self._dropout,
           trainable=self._trainable,
           shallow=self._shallow,
-          feature_num=i,
-          **self._kwargs)
+          feature_num=i)
     self._bias = self.add_weight(
         name='bias',
         initializer=tf.keras.initializers.Zeros(),
@@ -261,7 +260,7 @@ class NAM(tf.keras.Model):
         ind+=1
     
     punish_1=alpha_1*puni_1
-    print(punish_1)
+    print("loss of single monotonicity",punish_1)
     
     puni_2=0
     for i in range(len(pair)):
@@ -285,7 +284,7 @@ class NAM(tf.keras.Model):
       puni_2+=max(out3[0]-out[0],0)
       
     punish_2=alpha_2*puni_2
-    print(punish_2)
+    print("loss of strong pairwise monotonicity",punish_2)
 
     puni_3=0
     for i in range(len(pair_s)):
@@ -301,12 +300,12 @@ class NAM(tf.keras.Model):
       puni_3+=max(out1[0]-out[0],0)
     
     punish_3=alpha_3*puni_3
-    print(punish_3)
+    print("loss of single monotonicity in strong pairwise monotonicity",punish_3)
       
 
 
     ans = tf.constant(BCE+punish_1+punish_2+punish_3)
-    print(ans)
+    print("overall loss",ans)
     return ans
     
   def get_grad(self, x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s,pair_s1,alpha_3):
@@ -321,19 +320,11 @@ class NAM(tf.keras.Model):
     g = self.get_grad(x,true_value,monotonic_feature,individual_output,alpha_1,pair,pair1,pair2,pair3,alpha_2,pair_s, pair_s1,alpha_3)
     tf.keras.optimizers.Adam(learning_rate=learning_r).apply_gradients(zip(g, self.variables))
 
-  def _name_scope(self):
-    """Overrides the default function to fix name_scope for bias."""
-    tf_name_scope = self._kwargs.get('name_scope', None)
-    name_scope = super(NAM, self)._name_scope()
-    if tf_name_scope:
-      return tf_name_scope + '/' + name_scope
-    else:
-      return name_scope
 
   def calc_outputs(self, x, training = True):
     """Returns the output computed by each feature net."""
     training = self._true if training else self._false
-    list_x = tf.split(x, [3,1,1,1,1,1,1,1], axis=-1)
+    list_x = tf.split(x, list(self._kwargs['kwargs']), axis=-1)
     return [
         self.feature_nns[i](x_i, training=training)
         for i, x_i in enumerate(list_x)
